@@ -3,25 +3,29 @@ require_relative 'hook_interface'
 
 class FopPdfGenerator < HookInterface
 
-  def initialize(xslt_file)
+  def initialize(xslt_file, opts = {})
     @xslt_file = File.absolute_path(xslt_file)
     @log = ExporterApp.log_for(self.class.to_s)
+    @no_git = opts.fetch(:no_git, false)
+    @xconf_file = opts.has_key?(:xconf_file) ? File.absolute_path(opts[:xconf_file]) : false
   end
 
   def call(task)
+    workspace_directory = task.exported_variables.fetch(:workspace_directory)
     export_directory = task.exported_variables.fetch(:export_directory)
     subdirectory = task.exported_variables.fetch(:subdirectory)
 
-    full_export_path = File.join(export_directory, subdirectory)
+    ead_export_path = File.join(export_directory, subdirectory)
+    pdf_export_path = @no_git ? File.join(workspace_directory, 'pdf') : ead_export_path
 
-    json_files(full_export_path).each do |json_file|
+    json_files(ead_export_path).each do |json_file|
       begin
         json = JSON.parse(File.read(json_file))
 
-        ead_file =  File.join(full_export_path, json.fetch('ead_file'))
+        ead_file =  File.join(ead_export_path, json.fetch('ead_file'))
         identifier = File.basename(ead_file, '.*')
-        fop_file = File.join(full_export_path, "#{identifier}.fop")
-        pdf_file = File.join(full_export_path, "#{identifier}.pdf")
+        fop_file = File.join(pdf_export_path, "#{identifier}.fop")
+        pdf_file = File.join(pdf_export_path, "#{identifier}.pdf")
         pdf_tmp_file = "#{pdf_file}.tmp"
 
         if File.exist?(pdf_file) && File.mtime(ead_file) < File.mtime(pdf_file)
@@ -39,16 +43,19 @@ class FopPdfGenerator < HookInterface
           builder = org.apache.fop.apps.FopFactoryBuilder.new(java.net.URI.new("file://#{File.dirname(@xslt_file)}"))
 
           config_builder = org.apache.avalon.framework.configuration.DefaultConfigurationBuilder.new
-          config = config_builder.build(java.io.ByteArrayInputStream.new(generate_font_config.to_java.get_bytes("UTF-8")))
+
+          config = if (@xconf_file)
+                     config_builder.buildFromFile(java.io.File.new(@xconf_file))
+                   else
+                     config_builder.build(java.io.ByteArrayInputStream.new(generate_font_config.to_java.get_bytes("UTF-8")))
+                   end
 
           builder.set_configuration(config)
 
           fop_factory = builder.build
 
-          fop = fop_factory.newFop(org.apache.fop.apps.MimeConstants::MIME_PDF, output_stream)
-
           agent = fop_factory.newFOUserAgent
-          agent.setTitle(json.fetch('title'))
+          agent.setAccessibility(true) if (config.getChild('accessibility', false) && config.getChild('accessibility').getValue() == 'true')
           agent.setCreationDate(File.mtime(ead_file).to_java(java.util.Date))
 
           fop = fop_factory.newFop(org.apache.fop.apps.MimeConstants::MIME_PDF, agent, output_stream)

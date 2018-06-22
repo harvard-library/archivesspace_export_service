@@ -23,6 +23,8 @@
                        :numbered_cs => false
                      },
 
+                     :generate_handles => true,
+
                      :xslt_transforms => ['config/transform.xslt'],
                      :validation_schema => ['config/ead.xsd'],
                      :schematron_checks => ['config/schematron.sch'],
@@ -33,6 +35,8 @@
                    ],
 
                    :after_hooks => [
+#                     Example showing options that FopPdfGenerator accepts
+#                     FopPdfGenerator.new('config/as-ead-pdf.xsl', :no_git => true, :xconf_file => 'config/fop.xconf'),
                      FopPdfGenerator.new('config/as-ead-pdf.xsl'),
                      ErbRenderer.new("templates/manifest.md.erb", "README.md"),
                      ShellRunner.new("scripts/commit_workspace.sh"),
